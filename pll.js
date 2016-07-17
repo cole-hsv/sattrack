@@ -12,6 +12,7 @@ var spotISS = "time: Mon Jul 25 9:20 PM A, YES";
 //     2 25544  51.6442  65.9684 0000440 321.4350  38.6771 15.54542539  4737
 // Time: Wed Jun 15 8:39 PM, Visible: 4 min, Max Height: 42°, Appears: 26° above NNW, Disappears: 10° above ESE
 
+
 console.log(' ');
 console.log(chalk.yellow('Satellite Plot Data'));
 // Create a satellite record
