@@ -82,7 +82,7 @@ function printPosition() {
             var duskStr = (duskHr - 12) + ':' + duskMin + ':' + duskSec + ' PM';
 
             console.log(now);
-            console.log('Dusk ' + duskStr + '\t\tHeight (Km) \t' + hh.toFixed(3) + '\thzang ' + hzAng.toFixed(3) + '°');
+            console.log('Dusk ' + duskStr + '\t\tHeight (Km) \t' + hh.toFixed(3) + '\t\thzang ' + hzAng.toFixed(3) + '°');
             console.log("time hms \tLat ° \t Long° \tAlt ° \t Az ° \tSunAl° \tSunAzS°\t Ra ° \tDec ° \t ms"); // column labels
         };
 
