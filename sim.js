@@ -1,38 +1,48 @@
 var SGP4 = require('sgp4');
 var SunCalc = require('suncalc');
 var chalk = require('chalk');
+//var moment = require('moment');
+var moment = require('moment-timezone');
 // Create data for plotting ISS TLE lat-Long for Spot ISS date and time, 30 sec intervals
 
 // Sample ISS TLE Data
-var issLine1 = "1 25544U 98067A   16167.59728769  .00016717  00000-0  10270-3 0  9034";
-var issLine2 = "2 25544  51.6442  65.9684 0000440 321.4350  38.6771 15.54542539  4737";
-var spotISS = "time: Mon Jul 25 9:20 PM A, YES ";
+var issLine1 = "1 25544U 98067A   16209.50561190  .00016717  00000-0  10270-3 0  9002";
+var issLine2 = "2 25544  51.6406 216.8707 0002047  79.2092 280.9291 15.54896772 11251";
+var spotISS = "time: Thu Jul 28 8:17 PM A, YES";
 
+//     1 25544U 98067A   16209.50561190  .00016717  00000-0  10270-3 0  9002
+//     2 25544  51.6406 216.8707 0002047  79.2092 280.9291 15.54896772 11251
+// Time: Wed Jul 27 9:10 PM, Visible: 6 min, Max Height: 46°, Appears: 10° above WSW, Disappears: 11° above NE
+
+var today = moment().format("ddd MMM DD, YYYY h:mm A CT");
 console.log(' ');
-console.log(chalk.yellow('Satellite Simulation Data'));
+console.log(chalk.yellow('Satellite Simulation Data   ', today));
 // Create a satellite record
 var issSatRec = SGP4.twoline2rv(issLine1, issLine2, SGP4.wgs84());
 // console.log('SPG4.wgs84()', SGP4.wgs84());
 //  console.log('issSatRec', issSatRec);
-var obsLat = 34.7; //                Huntsville lat, lng
-var obsLng = -86.59;
+// var obsLat = 34.7; //        Huntsville lat, lng, (Joe Davis Stadium 34.7, -86.59)
+// var obsLng = -86.59;
+var obsLat = 34.6233; //         Huntsville lat, lng, (Aldersgate Meth. Ch. 34.6233, -86.5364)
+var obsLng = -86.5364;
 var r0 = 6378.135;
-var rtd = 57.29577951
+var rtd = 57.29577951;
 var tyr = issSatRec.epochyr + 2000;
 var txmon = spotISS.substring(10, 13);
 var tday = spotISS.substring(14, 16);
 var thr = Number(spotISS.substring(17, 18)) + 12;
-var tmin = Number(spotISS.substring(19, 21)) - 3;
-var tsec0 = 35;
+var tmin = Number(spotISS.substring(19, 21)) + 2;
+var tsec0 = 26;
+var dt = 30;
 
 var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 var tmon = months.indexOf(txmon);
 // console.log(tyr, tmon, txmon, tday, thr, tmin);
 var tspot = new Date(tyr, tmon, tday, thr, tmin);
 // console.log('tspot', tspot);
-console.log(spotISS);
-console.log('ISS TLE', '\t', issLine1);
-console.log('\t', issLine2);
+//console.log(spotISS);
+console.log('ISS TLE', '\n\t', issLine1, '\n\t', issLine2);
+// console.log('\t', issLine2);
 printPosition();
 console.log(' ');
 
@@ -40,7 +50,7 @@ console.log(' ');
 function printPosition() {
     var i;
     for (i = 0; i < 14; i++) {
-        var tsec = tsec0 + 60 * i;
+        var tsec = tsec0 + dt * i;
         var now = new Date(tyr, tmon, tday, thr, tmin, tsec);
 
         // This will contain ECI (http://en.wikipedia.org/wiki/Earth-centered_inertial) coordinates of position and velocity of the satellite
@@ -76,13 +86,14 @@ function printPosition() {
 
         if (i < 1) {
             var times = SunCalc.getTimes(now, obsLat, obsLng);
-            var duskHr = times.dusk.getHours();
-            var duskMin = times.dusk.getMinutes();
-            var duskSec = times.dusk.getUTCSeconds();
-            var duskStr = (duskHr - 12) + ':' + duskMin + ':' + duskSec + ' PM';
+            // var duskHr = times.dusk.getHours();
+            // var duskMin = times.dusk.getMinutes();
+            // var duskSec = times.dusk.getUTCSeconds();
+            // var duskStr = (duskHr - 12) + ':' + duskMin + ':' + duskSec + ' PM';
 
+            var duskStr = moment(times.dusk).format("h:mm:ss A");
             console.log(now);
-            console.log('Dusk ' + duskStr + '\t\tHeight (Km) \t' + hh.toFixed(3) + '\t\thzang ' + hzAng.toFixed(3) + '°');
+            console.log('Dusk ' + duskStr + '\t\tHeight (Km) \t' + hh.toFixed(3) + '\t\tHzAng\t ' + hzAng.toFixed(3) + '° \n');
             console.log("time hms \tLat ° \t Long° \tAlt ° \t Az ° \tSunAl° \tSunAzS°\t Ra ° \tDec ° \t ms"); // column labels
         };
 

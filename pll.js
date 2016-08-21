@@ -1,12 +1,15 @@
 var SGP4 = require('sgp4');
 var SunCalc = require('suncalc');
 var chalk = require('chalk');
+var moment = require('moment-timezone');
+// https://github.com/cole-hsv/sattrack
+
 // Create data for plotting ISS TLE lat-Long for Spot ISS date and time, 30 sec intervals
 
 // Sample ISS TLE Data
-var issLine1 = "1 25544U 98067A   16207.51310561  .00016717  00000-0  10270-3 0  9184";
-var issLine2 = "2 25544  51.6412 226.8120 0001957  74.8988 285.2381 15.54915529 10947";
-var spotISS = "time: Mon Jul 25 9:20 PM A, YES";
+var issLine1 = "1 25544U 98067A   16228.46489348  .00016717  00000-0  10270-3 0  9035";
+var issLine2 = "2 25544  51.6431 122.2483 0001572 125.1874 234.9426 15.55014495 14203";
+var spotISS = "time: Thu Aug 19 8:15 PM  Des, YES";
 
 //     1 25544U 98067A   16167.59728769  .00016717  00000-0  10270-3 0  9034
 //     2 25544  51.6442  65.9684 0000440 321.4350  38.6771 15.54542539  4737
@@ -19,16 +22,26 @@ console.log(chalk.yellow('Satellite Plot Data'));
 var issSatRec = SGP4.twoline2rv(issLine1, issLine2, SGP4.wgs84());
 // console.log('SPG4.wgs84()', SGP4.wgs84());
 //  console.log('issSatRec', issSatRec);
-var obsLat = 34.7; //                Huntsville lat, lng
-var obsLng = -86.59;
+// initialize Arrays
+var altA = [];
+var timeA = [];
+
+// set observer location and other constants
+// var obsLat = 34.7; //                Huntsville lat, lng, (Joe Davis Stadium 34.7, -86.59)
+// var obsLng = -86.59;
+var obsLat = 34.6233; //         Huntsville lat, lng, (Aldersgate Meth. Ch. 34.6233, -86.5364)
+var obsLng = -86.5364;
 var r0 = 6378.135;
 var rtd = 57.29577951
 var tyr = issSatRec.epochyr + 2000;
 var txmon = spotISS.substring(10, 13);
 var tday = spotISS.substring(14, 16);
 var thr = Number(spotISS.substring(17, 18)) + 12;
-var tmin = Number(spotISS.substring(19, 21)) + 0;
-var tsec0 = 37;
+var tmin = Number(spotISS.substring(19, 21)) - 0;
+var tsec0 = 10;
+
+var dsec = 30;
+var nPts = 14;
 
 var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 var tmon = months.indexOf(txmon);
@@ -44,8 +57,8 @@ console.log(' ');
 // This will print some info periodically
 function printPosition() {
     var i;
-    for (i = 0; i < 14; i++) {
-        var tsec = tsec0 + 30 * i;
+    for (i = 0; i < nPts; i++) {
+        var tsec = tsec0 + dsec * i;
         var now = new Date(tyr, tmon, tday, thr, tmin, tsec);
 
         // This will contain ECI (http://en.wikipedia.org/wiki/Earth-centered_inertial) coordinates of position and velocity of the satellite
@@ -84,11 +97,11 @@ function printPosition() {
             var duskMin = times.dusk.getMinutes();
             if (duskMin < 10) {
                 duskMin = "0" + duskMin;
-            }
+            };
             var duskSec = times.dusk.getUTCSeconds();
             if (duskSec < 10) {
                 duskSec = "0" + duskSec;
-            }
+            };
             var duskStr = (duskHr - 12) + ':' + duskMin + ':' + duskSec + ' PM';
 
             console.log(now);
@@ -96,26 +109,70 @@ function printPosition() {
             console.log("time hms \tLat ° \t Long° \tAlt ° \tAz ° \tSunAng°"); // column labels
         };
 
+        // fill Arrays
+        altA.push(alt);
+        timeA.push(now);
+
         // Prints latitude of longitude of ISS
+        var tnow = moment(now).format("h:mm:ss A");
         var nHrs = now.getHours();
         var nMin = now.getMinutes();
         var nSec = now.getUTCSeconds();
-        console.log(textPosition(nHrs, nMin, nSec, latitude, longitude, alt, az, sunAng));
+        console.log(textPosition(tnow, latitude, longitude, alt, az, sunAng));
     };
+    var dAlt = ((15 - altA[0]) / (altA[1] - altA[0]) * dsec).toFixed(2);
+    // var altMx = altA[0];
+    // for (i = 1; i < nPts; i++) {
+    //     if (altA[i] > altMx) {
+    //         altMx = altA[i];
+    //     };
+    // };
+
+    altMax1 = altitudeMax(altA);
+
+    console.log("riseAdj ", dAlt, "\t\tmaxAlt ", altMax1.toFixed(3));
+    //  console.log("riseAdj ", dAlt, "\tmaxAlt ", altMx.toFixed(2), altMax1.toFixed(3));
 };
 
-function textPosition(hrs1, min1, sec1, lat1, lng1, alt1, az1, sunAng) {
+function textPosition(tnow1, lat1, lng1, alt1, az1, sunAng) {
     var lat1s = lat1.toFixed(2);
     var lng1s = lng1.toFixed(2);
     var alt1s = alt1.toFixed(2);
     var sang = sunAng.toFixed(3);
     var az1s = az1.toFixed(2);
-    if (min1 < 10) {
-        min1 = "0" + min1;
-    };
-    if (sec1 < 10) {
-        sec1 = "0" + sec1;
-    };
-    tx = hrs1 + ':' + min1 + ':' + sec1 + '\t' + lat1s + '\t' + lng1s + '\t' + alt1s + '\t' + az1s + '\t' + sang;
+    tx = tnow1 + '\t' + lat1s + '\t' + lng1s + '\t' + alt1s + '\t' + az1s + '\t' + sang;
     return tx
+};
+
+function altitudeMax(altA1) {
+    // uses 3 point Langrangian interpolation to find max
+    var altMax = altA1[0];
+    for (i = 1; i < nPts; i++) {
+        if (altA1[i] > altMax) {
+            altMax = altA1[i];
+            x2 = i
+        };
+    };
+    x1 = x2 - 1;
+    x3 = x2 + 1;
+    y1 = altA1[x1];
+    y2 = altA1[x2];
+    y3 = altA1[x3];
+    a1 = x2 + x3;
+    a2 = x1 + x3;
+    a3 = x1 + x2;
+    b1 = (x1 - x2) * (x1 - x3);
+    b2 = (x2 - x1) * (x2 - x3);
+    b3 = (x3 - x1) * (x3 - x2);
+    c1 = y1 * a1 / b1 + y2 * a2 / b2 + y3 * a3 / b3;
+    c2 = (y1 / b1 + y2 / b2 + y3 / b3) * 2;
+    x = c1 / c2;
+    e1 = x - x1;
+    e2 = x - x2;
+    e3 = x - x3;
+    b1 = (x1 - x2) * (x1 - x3);
+    b2 = (x2 - x1) * (x2 - x3);
+    b3 = (x3 - x1) * (x3 - x2);
+    y = y1 * e2 * e3 / b1 + y2 * e1 * e3 / b2 + y3 * e1 * e2 / b3;
+    return y
 };

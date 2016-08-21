@@ -15,8 +15,8 @@ var issLine2 = "2 25544  51.6417 196.4833 0001609 119.2724 240.8590 15.54673668 
 // Time: Sun Apr 17 8:20 PM, Visible: 4 min, Max Height: 55°, Appears: 19° above NNW, Disappears: 26° above ESE
 
 
-console.log(' ')
-    // Create a satellite record
+console.log(' ');
+// Create a satellite record
 var issSatRec = SGP4.twoline2rv(issLine1, issLine2, SGP4.wgs84());
 
 // var vel = SGP4.sgp4(issSatRec, 0.0);
@@ -99,6 +99,7 @@ function printPosition() {
     console.log("Azimuth: " + lookAngles.azimuth * SGP4.rad2deg);
     console.log("Elevation: " + lookAngles.elevation * SGP4.rad2deg);
 
+    console.log(' ');
     // Call printPosition in 750 ms
     // setTimeout(printPosition, 750);
 }
