@@ -7,17 +7,17 @@ var moment = require('moment-timezone');
 // Create data for plotting ISS TLE lat-Long for Spot ISS date and time, 30 sec intervals
 
 // Sample ISS TLE Data
-var issLine1 = "1 25544U 98067A   16228.46489348  .00016717  00000-0  10270-3 0  9035";
-var issLine2 = "2 25544  51.6431 122.2483 0001572 125.1874 234.9426 15.55014495 14203";
-var spotISS = "time: Thu Aug 19 8:15 PM  Des, YES";
+var issLine1 = "1 25544U 98067A   16258.87296899  .00016717  00000-0  10270-3 0  9197";
+var issLine2 = "2 25544  51.6423 330.5895 0005293 304.7575  55.3079 15.53798175 18937";
+var spotISS = "time: Tue Sep 27 8:32 PM  Asc, YES  lng2 -92.52  mxA 49°  DarkDL -5.96 tRE 1.45";
 
 //     1 25544U 98067A   16167.59728769  .00016717  00000-0  10270-3 0  9034
 //     2 25544  51.6442  65.9684 0000440 321.4350  38.6771 15.54542539  4737
 // Time: Wed Jun 15 8:39 PM, Visible: 4 min, Max Height: 42°, Appears: 26° above NNW, Disappears: 10° above ESE
 
-
+today = moment().format("ddd MMM DD, YYYY h:mm A ");
 console.log(' ');
-console.log(chalk.yellow('Satellite Plot Data'));
+console.log(chalk.yellow('Satellite Plot Data       ' + today));
 // Create a satellite record
 var issSatRec = SGP4.twoline2rv(issLine1, issLine2, SGP4.wgs84());
 // console.log('SPG4.wgs84()', SGP4.wgs84());
@@ -34,11 +34,15 @@ var obsLng = -86.5364;
 var r0 = 6378.135;
 var rtd = 57.29577951
 var tyr = issSatRec.epochyr + 2000;
+var tleDay = issSatRec.epochdays;
+var tleEdate = tleEpochDate(tyr, tleDay);
+var inclo = issSatRec.inclo; // inclination in radians
+var incld = inclo * rtd;
 var txmon = spotISS.substring(10, 13);
 var tday = spotISS.substring(14, 16);
 var thr = Number(spotISS.substring(17, 18)) + 12;
 var tmin = Number(spotISS.substring(19, 21)) - 0;
-var tsec0 = 10;
+var tsec0 = 0;
 
 var dsec = 30;
 var nPts = 14;
@@ -48,8 +52,8 @@ var tmon = months.indexOf(txmon);
 // console.log(tyr, tmon, txmon, tday, thr, tmin);
 var tspot = new Date(tyr, tmon, tday, thr, tmin);
 // console.log('tspot', tspot);
-console.log(spotISS);
-console.log('ISS TLE', '\t', issLine1);
+console.log(chalk.cyan(spotISS));
+console.log('TLE', '\t', issLine1);
 console.log('\t', issLine2);
 printPosition();
 console.log(' ');
@@ -72,7 +76,7 @@ function printPosition() {
         var hh = geodeticCoordinates.height;
         var rr = hh + r0;
         var hzAng = Math.acos(r0 / rr) * rtd;
-        var tstephr = now.getUTCHours();
+        // var tstephr = now.getUTCHours();
 
         // console.log(tstephr, + ':' + now.getUTCMinutes() + ":" + now.getUTCSeconds() + '\t' + latitude + '\t' + longitude);
         var observerPos = {
@@ -80,7 +84,7 @@ function printPosition() {
             latitude: obsLat * SGP4.deg2rad,
             height: 1
         };
-        var satEcf = SGP4.eciToEcf(positionAndVelocity.position, gmst);
+        var satEcf = SGP4.eciToEcf(positionAndVelocity.position, gmst); // coord: earth cent fixed to rot earth
         var lookAngles = SGP4.topocentricToLookAngles(SGP4.topocentric(observerPos, satEcf));
         alt = lookAngles.elevation * SGP4.rad2deg;
         az = lookAngles.azimuth * SGP4.rad2deg;
@@ -91,7 +95,7 @@ function printPosition() {
         var sunAz = sunCurPos.azimuth * rtd;
         var sunAng = sunCurPos.altitude * rtd + hzAng;
 
-        if (i < 1) {
+        if (i == 0) {
             var times = SunCalc.getTimes(now, obsLat, obsLng);
             var duskHr = times.dusk.getHours();
             var duskMin = times.dusk.getMinutes();
@@ -104,7 +108,7 @@ function printPosition() {
             };
             var duskStr = (duskHr - 12) + ':' + duskMin + ':' + duskSec + ' PM';
 
-            console.log(now);
+            console.log(moment(now).format("ddd MMM DD, YYYY h:mm:ss A "), tleEdate);
             console.log('Dusk ' + duskStr + '\t\tHeight (Km) \t' + hh.toFixed(3));
             console.log("time hms \tLat ° \t Long° \tAlt ° \tAz ° \tSunAng°"); // column labels
         };
@@ -147,6 +151,7 @@ function textPosition(tnow1, lat1, lng1, alt1, az1, sunAng) {
 function altitudeMax(altA1) {
     // uses 3 point Langrangian interpolation to find max
     var altMax = altA1[0];
+    var x2 = 0;
     for (i = 1; i < nPts; i++) {
         if (altA1[i] > altMax) {
             altMax = altA1[i];
@@ -176,3 +181,18 @@ function altitudeMax(altA1) {
     y = y1 * e2 * e3 / b1 + y2 * e1 * e3 / b2 + y3 * e1 * e2 / b3;
     return y
 };
+
+function tleEpochDate(yre, dyf) {
+    yr = yre + 2000;
+    dy = Math.floor(dyf);
+    hrf = (dyf - dy) * 24;
+    hr = Math.floor(hrf);
+    minf = (hrf - hr) * 60;
+    min = Math.floor(minf);
+    scf = (minf - min) * 60;
+    sc = Math.floor(scf);
+    ms = (scf - sc) * 1000;
+    ed1 = new Date(yr, 0, dy, hr, min, sc, ms);
+    edate = moment(ed1).format("ddd MMM DD, YYYY h:mm:ss.SSS");
+    return edate;
+}
