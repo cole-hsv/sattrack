@@ -1,11 +1,21 @@
 #!/bin/bash
 set -e
 
+hash gnuplot 2>/dev/null || { cat <<EOF
+gnuplot is not installed.  Aborting.
+
+EOF
+exit 1
+}
+hash imgcat 2>/dev/null && HASIMGCAT=true
+
+[ -z "$1" ] && OUTFILE=plot.png || OUTFILE=$1
+
 read LON LAT SATNAME
 
 cat > data.txt
 
-gnuplot <<EOF | tee "plot.png" | imgcat
+gnuplot <<EOF | tee $OUTFILE | ( [ -n "$HASIMGCAT" ] && imgcat || exec &>/dev/null)
 set terminal png
 set title "$SATNAME"
 set xlabel "Longitude"

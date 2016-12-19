@@ -20,12 +20,13 @@ gulp.task('static', function () {
 
 gulp.task('nsp', function (cb) {
   nsp({
-    package: path.resolve('package.json')
+    package: path.resolve('package.json'),
+    stopOnError: false
   }, cb);
 });
 
 gulp.task('pre-test', function () {
-  return gulp.src('lib/**/*.js')
+  return gulp.src(['./index.js', 'lib/**/*.js'])
     .pipe(excludeGitignore())
     .pipe(istanbul({
       includeUntested: true

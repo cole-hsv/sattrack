@@ -15,41 +15,60 @@ var moment = require('moment-timezone');
 var chalk = require('chalk');
 var RSVP = require('rsvp');
 
-const conf = new Configstore(pkg.name, {
-  tz: moment.tz.guess()
-});
-moment.tz.setDefault(conf.get('tz'));
-
+const CELSTRACKURL = 'www.celestrak.com/NORAD/elements/';
 // formatting functions
 var f2 = f => f.toFixed(2); // format float to 2
 
-var argv = require('yargs') // eslint-disable-line no-unused-vars
-  .usage('Usage: $0 [command] <options>')
-  .command(['update', 'u'], 'Update tle file', {}, getCelestrack)
-  .command(['visible'], 'Visible tonight', {}, cmdInit(visible))
-  .command(['next [satellite]'], 'next [satellite]', {}, cmdInit(nextPass))
-  .command(['plot [satellite]'], 'plot [satellite]', {}, cmdInit(plot))
-  .command(['config [name] [value]'], 'show/set the config', {}, cmdConfig)
-  .demand(1)
-  .option('day', {
-    global: true,
-    default: 0,
-    description: 'add or remove days to the reference date'
-  })
-  .option('range', {
-    global: true,
-    default: 1,
-    description: 'number of days to scan'
-  })
-  .alias('v', 'verbose')
-  .fail(function (msg, err, yargs) { // eslint-disable-line no-unused-vars
-    if (err) throw err; // preserve stack
-    console.error(msg);
-    process.exit(1);
-  })
-  .help()
-  .argv;
+module.exports = {
+  duskRange: sattrack.duskRange,
+  range: sattrack.range,
+  visible: sattrack.visible,
+  getTLE: getTLE,
+  getCelestrack: getCelestrack,
+  CELSTRACKURL
+};
 
+if (!module.parent) {
+  var conf = new Configstore(pkg.name, {
+    tz: moment.tz.guess()
+  });
+
+  moment.tz.setDefault(conf.get('tz'));
+
+  var argv = require('yargs') // eslint-disable-line no-unused-vars
+    .usage('Usage: $0 [command] <options>')
+    .command(['update', 'u'], 'Update tle file', {}, cmdInit(getCelestrack))
+    .command(['visible', 'v'], 'Visible tonight', {}, cmdInit(visible))
+    .command(['next [satellite]', 'n'], 'next [satellite]', {}, cmdInit(nextPass))
+    .command(['plot [satellite]', 'p'], 'plot [satellite]', {}, cmdInit(plot))
+    .command(['config [name] [value]', 'c'], 'show/set the config', {}, cmdConfig)
+    .demand(1)
+    .option('day', {
+      global: true,
+      default: 0,
+      description: 'add or remove days to the reference date'
+    })
+    .option('range', {
+      global: true,
+      default: 1,
+      description: 'number of days to scan'
+    })
+    .option('tle', {
+      global: true,
+      default: 'visual',
+      description: 'TLE dataset to use',
+      choices: ['visual', 'tle-new', 'stations', 'weather', 'supplemental/iss']
+    })
+    .alias('v', 'verbose')
+    .fail(function (msg, err, yargs) { // eslint-disable-line no-unused-vars
+      if (err) throw err; // preserve stack
+      console.error(chalk.red(msg));
+      yargs.showHelp();
+      process.exit(1);
+
+    })
+    .argv;
+}
 
 /**
  * Initialze commands that are going to use a date range.  Creates a `now`
@@ -60,12 +79,44 @@ var argv = require('yargs') // eslint-disable-line no-unused-vars
  * as part of the `yargs` command.
  */
 function cmdInit(cmd) {
-  return function argHandler(args) {
-    if (!args.now) args.now = moment();
-    if (args.day) args.now.add(args.day, 'day');
-    if (args.range) args.enddate = moment().add(args.range + (args.day || 0), 'day');
-    cmd(args);
+  return function argHandler(argv) {
+    if (!argv.now) argv.now = moment();
+    if (argv.day) argv.now.add(argv.day, 'day');
+    if (argv.range) argv.enddate = moment().add(argv.range + (argv.day || 0), 'day');
+
+    var tle_alias = {
+      'supplemental/iss': {
+        url: CELSTRACKURL + argv.tle + '.txt',
+        filename: 'supplemental-iss.txt'
+      }
+    };
+
+    if (tle_alias[argv.tle]) {
+      argv.tleurl = tle_alias[argv.tle].url;
+      argv.tlefilename = tle_alias[argv.tle].filename;
+    } else {
+      argv.tleurl = CELSTRACKURL + argv.tle + '.txt';
+      argv.tlefilename = argv.tle + '.txt';
+    }
+
+    if (fs.existsSync(argv.tlefilename)) {
+      return cmd(argv);
+    } else {
+      getCelestrack(argv).then(function () {
+        return cmd(argv);
+      }).catch(err => console.error('cmdInit:getCelestrack returned an error', err));
+    }
   };
+}
+
+function HttpGet(url, options) {
+  options = Object.assign({}, {
+    headers: {
+      'user-agent': `${pkg.name}/${pkg.version} (${pkg.repository})`
+    }
+  }, options);
+  // console.log(chalk.green('HttpGet %j %j'), url, options);
+  return got.get(url, options);
 }
 
 /**
@@ -99,7 +150,7 @@ function cmdConfig(argv) {
  */
 function withTleAndLocaton(argv, getOptions, check, done) {
   RSVP.hash({
-    tle: getTLE(undefined, argv.satellite),
+    tle: getTLE(argv.tlefilename, argv.satellite),
     location: getLocation()
   }).then(function (results) {
 
@@ -111,9 +162,10 @@ function withTleAndLocaton(argv, getOptions, check, done) {
       return check(argv, pos);
     });
 
-    if (done) done(argv);
+    if (done) return done(argv);
+    else return argv;
   }).catch(function (err) {
-    console.error('err', err);
+    console.error('withTleAndLocaton Error:', err);
   });
 }
 
@@ -216,7 +268,7 @@ function plot(argv) {
 
   function header(tle, location, options) {
     var range = options.range.map(d => moment(d).format('MMM Do')).join(' - ');
-    console.log(`${location.longitude} ${location.latitude} ${argv.satellite} ${range}`);
+    console.log(`${location.longitude} ${location.latitude} ${tle[0].trim()} ${range}`);
   }
 
   scanRange(argv, {
@@ -227,7 +279,7 @@ function plot(argv) {
 
 
 function visible(argv) {
-  var tle = getFile(argv.file)
+  var tle = getFile(argv.tlefilename)
     .bufferWithCount(3);
 
   Rx.Observable.combineLatest(tle, getLocation(),
@@ -258,16 +310,6 @@ function visible(argv) {
     });
 }
 
-function HttpGet(url, options) {
-  options = Object.assign({}, {
-    headers: {
-      'user-agent': `${pkg.name}/${pkg.version} (${pkg.repository})`
-    }
-  }, options);
-  console.log(chalk.green('HttpGet %j %j'), url, options);
-  return got.get(url, options);
-}
-
 function getLocation() {
   var location = conf.get('location');
   // console.log(chalk.green('getLocation %j'), location);
@@ -283,31 +325,64 @@ function getLocation() {
     conf.set('location', location.body);
     return location.body;
   });
-
 }
 
-function getCelestrack() {
-  HttpGet('www.celestrak.com/NORAD/elements/visual.txt')
+/**
+ * Download a TLE set from a url.
+ * @param  {Object} argv An arguments object
+ * @param  {String} argv.tleurl The url to download from
+ * @param  {String} argv.tlefilename The filename to save the TLE set to
+ * @return {Promise}      Returns a promise with no data.
+ */
+function getCelestrack(argv) {
+  return HttpGet(argv.tleurl)
     .then(function (response) {
-      console.log('response.body', response.body);
-      fs.writeFileSync('./visual.txt', response.body);
+      // console.log('response.body', response.body);
+      fs.writeFileSync('./' + argv.tlefilename, response.body);
+      console.log(chalk.green(`Updated ${argv.tlefilename}`));
+      return response.body;
     })
     .catch(function (err) {
-      console.error('error getting tle', err);
+      console.error(chalk.red('error getting tle %s %s %j'), argv.tlefilename, argv.tleurl, err);
     });
 }
 
 function getFile(file) {
+  if (!fs.existsSync(file)) {
+    throw new Error(`TLE file '${file}' does not exist`);
+  }
+  var mtime = moment(fs.statSync(file).mtime);
+  if (mtime.isBefore(moment().add(-2, 'days'))) {
+    console.log(chalk.yellow(`TLE file ${file} is ${mtime.fromNow(true)} old.  You should update it.`));
+  }
+
   return RxNode
     .fromReadLineStream(readline.createInterface({
-      input: fs.createReadStream(file || './visual.txt')
+      input: fs.createReadStream(file)
     }));
 }
 
+/**
+ * Returns a TLE array given a string match or
+ * regular expression string.
+ * @param  {String}   file      Tile file to search
+ * @param  {String}   satellite Search string or regex if in `//`
+ * @param  {Function} cb        Optional callback: `function(err, tle)`
+ * @return {Promise}            If no callback is passed in, a promise is returned
+ */
 function getTLE(file, satellite, cb) {
+  // use a regular expression if the `satellite` string is
+  // surrounded with `//`
+  if (satellite.startsWith('/') && satellite.endsWith('/')) {
+    var re = new RegExp(satellite.slice(1, -1), 'i');
+    var match = x => !x.match(re);
+  } else {
+    var match = x => !x.startsWith(satellite); // eslint-disable-line no-redeclare
+  }
+
   var observable = getFile(file)
     .skipWhile(function (x) {
-      return satellite && !x.startsWith(satellite);
+      return match(x);
     })
     .take(3)
     .reduce(function (result, value) {
