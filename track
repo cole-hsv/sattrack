@@ -1,0 +1,14 @@
+#!/bin/bash
+
+SATTRACK="node index.js"
+
+# position=$($SATTRACK -i track "$1" --limit 1 --seconds $2 -q)
+
+read TIME ALT AZ RA DEC <<<$($SATTRACK --tle nasa -i track $1 --limit 1 --seconds $2 -q)
+# echo "TIME: $TIME"
+# echo "ALT: $ALT"
+# echo "AZ: $AZ"
+# echo "RA: $RA"
+# echo "DEC: $DEC"
+echo "$1 will cross RA: $RA DEC: $DEC at $TIME"
+mqtt pub -t "nexstar/rpc/gotoRaDec" -m "[$RA,$DEC]"

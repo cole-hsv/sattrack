@@ -1,7 +1,7 @@
 'use strict';
 
 var assert = require('assert');
-var cli = require('../index.js');
+var cli = require('./index.js');
 var chalk = require('chalk');
 // var moment = require('moment-timezone');
 

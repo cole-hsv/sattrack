@@ -41,6 +41,7 @@ if (!module.parent) {
     .command(['visible', 'v'], 'Visible tonight', {}, cmdInit(visible))
     .command(['next [satellite]', 'n'], 'next [satellite]', {}, cmdInit(nextPass))
     .command(['plot [satellite]', 'p'], 'plot [satellite]', {}, cmdInit(plot))
+    .command(['track [satellite]', 't'], 'track [satellite]', {}, cmdInit(track))
     .command(['config [name] [value]', 'c'], 'show/set the config', {}, cmdConfig)
     .demand(1)
     .option('day', {
@@ -48,16 +49,42 @@ if (!module.parent) {
       default: 0,
       description: 'add or remove days to the reference date'
     })
+    .option('s', {
+      alias: 'seconds',
+      global: true,
+      default: 0,
+      description: 'add or remove seconds to the reference date'
+    })
     .option('range', {
       global: true,
       default: 1,
       description: 'number of days to scan'
     })
+    .option('limit', {
+      global: true,
+      description: 'limit number of responces'
+    })
     .option('tle', {
       global: true,
       default: 'visual',
       description: 'TLE dataset to use',
-      choices: ['visual', 'tle-new', 'stations', 'weather', 'supplemental/iss']
+      choices: ['visual', 'tle-new', 'stations', 'weather', 'supplemental/iss', 'custom', 'nasa']
+    })
+    .option('date', {
+      global: true,
+      description: 'use this time for calculating',
+    })
+    .option('i', {
+      alias: 'immediate',
+      global: true,
+      description: 'use now as starting date',
+      type: 'boolean'
+    })
+    .option('q', {
+      alias: 'quiet',
+      global: true,
+      description: 'do not print headers',
+      type: 'boolean'
     })
     .alias('v', 'verbose')
     .fail(function (msg, err, yargs) { // eslint-disable-line no-unused-vars
@@ -80,20 +107,29 @@ if (!module.parent) {
  */
 function cmdInit(cmd) {
   return function argHandler(argv) {
+    if (argv.date) argv.now = moment(argv.date, 'MM/DD/YYYY hh:mm:ss A');
     if (!argv.now) argv.now = moment();
     if (argv.day) argv.now.add(argv.day, 'day');
-    if (argv.range) argv.enddate = moment().add(argv.range + (argv.day || 0), 'day');
+    if (argv.seconds) argv.now.add(argv.seconds, 'second');    
+    if (argv.range) argv.enddate = argv.now.clone().add(argv.range + (argv.day || 0), 'day');
+    // console.log('argv', argv);
 
     var tle_alias = {
       'supplemental/iss': {
         url: CELSTRACKURL + argv.tle + '.txt',
         filename: 'supplemental-iss.txt'
+      },
+      'nasa': {
+        url: 'https://spaceflight.nasa.gov/realdata/sightings/SSapplications/Post/JavaSSOP/orbit/ISS/SVPOST.html',
+        filename: 'nasa.txt',
+        scraper: getNasa
       }
     };
 
     if (tle_alias[argv.tle]) {
       argv.tleurl = tle_alias[argv.tle].url;
       argv.tlefilename = tle_alias[argv.tle].filename;
+      argv.scraper = tle_alias[argv.tle].scraper;
     } else {
       argv.tleurl = CELSTRACKURL + argv.tle + '.txt';
       argv.tlefilename = argv.tle + '.txt';
@@ -153,7 +189,8 @@ function withTleAndLocaton(argv, getOptions, check, done) {
     tle: getTLE(argv.tlefilename, argv.satellite),
     location: getLocation()
   }).then(function (results) {
-
+    // console.log('withTleAndLocaton', results, argv);
+    if (!results.tle || results.tle.length == 0) throw new Error(`no TLE found for satellite: "${argv.satellite}"`);
     var options = Object.assign({}, {
       location: results.location
     }, getOptions ? getOptions(results.tle, results.location) : {});
@@ -185,17 +222,21 @@ const DUSKKEYFORMAT = 'MMM Do';
  * @param  {Function} hooks.done called at the end of the range loop.  The last position that `check` returned true for is stored in `pass`.  `function(argv, pass)`
  */
 function scanRange(argv, hooks) {
-  var pass, options = {};
+  var pass, options = {}, runs = 0;
 
   withTleAndLocaton(argv, function setOptions(tle, location) {
+    options.location = location;
     /*
       If the number of days in the range is 1, then the range and dusk values
       are just the dusk range, with one value in the dusk object.
      */
     var days = argv.enddate.diff(argv.now, 'days');
+    // console.log('days', days);
     options.dusk = {};
     if (days == 1) {
       options.range = sattrack.duskRange(argv.now.toDate(), location).map(d => d.toDate());
+      if (argv.immediate) options.range[0] = argv.now.toDate();
+      // console.log('range', options);
       options.dusk[argv.now.format(DUSKKEYFORMAT)] = options.range;
     } else {
       /*
@@ -206,6 +247,7 @@ function scanRange(argv, hooks) {
       var startDusk = sattrack.duskRange(argv.now.toDate(), location)[0].toDate();
       var endDusk = sattrack.duskRange(argv.enddate.toDate(), location)[1].toDate();
       options.range = [startDusk, endDusk];
+      
       for (var i = 0; i <= days; i++) {
         var day = argv.now.clone().add(i, 'days');
         options.dusk[day.format(DUSKKEYFORMAT)] = sattrack.duskRange(day.toDate(), location).map(d => d.toDate());
@@ -215,8 +257,9 @@ function scanRange(argv, hooks) {
     if (hooks.header) hooks.header(tle, location, options);
 
     return options;
-  }, function callCheck(argv, pos) {
+  }, function callCheck(argv, pos) {    
     if (hooks.check(argv, pos, options)) {
+
       pass = pos;
       return true;
     }
@@ -239,6 +282,7 @@ function nextPass(argv) {
   function done(argv, pass, options) {
     if (!pass) console.log('no pass between', options.range.map(d => moment(d).format('LT MMM Do')));
   }
+  
   scanRange(argv, {
     check,
     done
@@ -277,6 +321,43 @@ function plot(argv) {
   });
 }
 
+function track(argv) {
+  var runs = 0;
+  function check(argv, pos, options) {
+    // if `argv.limit` is set and there have been more positive runs
+    // then return true immediately
+    if (argv.limit && runs >= argv.limit) {
+      return true;
+    }
+    var t = moment(pos.time);
+    var d = t.format(DUSKKEYFORMAT);
+    var dusk = options.dusk[d];
+    // console.log(t.format('hh:mm:ss A MMM Do'), dusk.map(d => moment(d).format('LT MMM Do')), t.isBetween(dusk[0], dusk[1]), pos.sat.alt);
+
+    if (pos.sat.alt > 15 && t.isBetween(dusk[0], dusk[1])) {
+      runs++;
+
+      // console.log(pos.sat.gmst, pos.sat.alt, pos.sat.az, options.location.latitude, options.location.longitude);
+      var e = sattrack.AltAz2RaDecDeg(pos.sat.gmst, pos.sat.alt, pos.sat.az, options.location.latitude, options.location.longitude);
+      // var e = {};
+      // console.log('pos', options);
+      console.log(`${moment(pos.time).format('hh:mm:ssA')} ${f2(pos.sat.alt)} ${f2(pos.sat.az)} ${e.ra} ${e.dec}`);
+    }
+  }
+
+  function header(tle, location, options) {
+    // console.log('options', options, tle);
+    var ascendingNode = tle[2].split(' ')[4];
+    var range = options.range.map(d => moment(d).format('MMM Do')).join(' - ');
+    if (!argv.quiet) console.log(`${location.longitude} ${location.latitude} ${tle[0].trim()} ${range} ascending node: ${ascendingNode}`);
+  }
+
+  scanRange(argv, {
+    check,
+    header
+  });
+}
+
 
 function visible(argv) {
   var tle = getFile(argv.tlefilename)
@@ -295,6 +376,8 @@ function visible(argv) {
         range: sattrack.duskRange(argv.now.toDate(), data.location).map(d => d.toDate())
       };
 
+      if (argv.immediate) options.range[0] = argv.now.toDate();
+      
       return Object.assign(data, {
         pos: sattrack.visible(data.tle, options)
       });
@@ -303,8 +386,9 @@ function visible(argv) {
     .toArray()
     .map(x => x.sort((a, b) => a.pos.time < b.pos.time ? -1 : 1))
     .subscribe(function (positions) {
+      var limit = p => argv.limit ? p.slice(0,argv.limit) : p;
       // console.log(positions);
-      positions.forEach(function (data) {
+      limit(positions).forEach(function (data) {
         console.log(`${data.tle[0].trim()} visible at ${moment(data.pos.time).format('LT')} az:${data.pos.sat.az.toFixed(1)} alt:${data.pos.sat.alt.toFixed(1)}`);
       });
     });
@@ -337,14 +421,46 @@ function getLocation() {
 function getCelestrack(argv) {
   return HttpGet(argv.tleurl)
     .then(function (response) {
-      // console.log('response.body', response.body);
+      
+      if (argv.scraper) {
+        response.body = argv.scraper(response.body);
+      }
+      
       fs.writeFileSync('./' + argv.tlefilename, response.body);
       console.log(chalk.green(`Updated ${argv.tlefilename}`));
       return response.body;
     })
     .catch(function (err) {
-      console.error(chalk.red('error getting tle %s %s %j'), argv.tlefilename, argv.tleurl, err);
+      console.error(chalk.red('error getting tle %s %s'), argv.tlefilename, argv.tleurl, err);
     });
+}
+
+/**
+ * Scrape the nasa page for TLEs
+ * @param  {String} body the body of the nasa response
+ * @return {String}      a string of scraped TLEs
+ */
+function getNasa(body) {
+  var search = [/Orbit ([^\)]*)/, /Vector Time \(GMT\): (.*)$/, /^....ISS$/, /.*/, /.*/];
+  var sidx = 0;
+  var tle = [];
+  
+  return body.split('\n').reduce(function(file, line) {
+    var match = search[sidx].exec(line);
+    if (match) {
+      tle.push(match.slice(-1)[0].trim());
+      sidx++;
+      
+      if (sidx >= search.length) {
+        file.push(`${tle[2]} Orbit ${tle[0]} ${moment(tle[1], 'YYYY/DDD/HH:mm:ss.SSS').format('LLL')}
+${tle[3]}
+${tle[4]}`);
+        tle = [];
+        sidx = 0;
+      }
+    }
+    return file;
+  }, []).join('\n');
 }
 
 function getFile(file) {

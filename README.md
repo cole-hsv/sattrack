@@ -3,11 +3,34 @@
 
 ## Installation
 
+
 ```sh
-$ npm install --save sattrack
+$ npm install -g sattrack
 ```
 
+## Configuration
+
+
 ## Usage
+
+
+```
+Usage: sattrack [command] <options>
+
+Commands:
+  update                 Update tle file                            [aliases: u]
+  visible                Visible tonight                            [aliases: v]
+  next [satellite]       next [satellite]                           [aliases: n]
+  plot [satellite]       plot [satellite]                           [aliases: p]
+  config [name] [value]  show/set the config                        [aliases: c]
+
+Options:
+  --day    add or remove days to the reference date                 [default: 0]
+  --range  number of days to scan                                   [default: 1]
+  --tle    TLE dataset to use
+       [choices: "visual", "tle-new", "stations", "weather", "supplemental/iss"]
+                                                             [default: "visual"]
+```
 
 ```js
 var sattrack = require('sattrack');
